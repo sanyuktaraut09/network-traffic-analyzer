@@ -1,5 +1,26 @@
+/**
+ * Folder: src/services/
+ * Description: Business logic layer for security metrics and risk evaluation.
+ *
+ * File: src/services/securityService.js
+ * Implementation details:
+ * - Decoupled from Express HTTP objects (no req, res).
+ * - Implements security risk classification logic (classifyRisk).
+ * - Evaluates traffic metrics for IPs and categorizes risk into HIGH, MEDIUM, or LOW.
+ */
+
 import * as logRepo from '../repositories/logRepository.js';
 
+/**
+ * Classifies an IP's threat level based on security heuristics.
+ * Risk Rules:
+ * - HIGH: failed_logins > 5 OR client_errors > 10 OR server_errors > 5 OR total_requests > 30 OR client error ratio > 50%
+ * - MEDIUM: failed_logins > 2 OR client_errors > 5 OR server_errors > 2 OR total_requests > 10
+ * - LOW: baseline normal traffic pattern
+ *
+ * @param {Object} row - IP aggregate metrics object
+ * @returns {string} 'HIGH' | 'MEDIUM' | 'LOW'
+ */
 export function classifyRisk(row) {
   const failedLogins = row.failed_logins || 0;
   const clientErrors = row.client_errors || 0;
@@ -28,6 +49,10 @@ export function classifyRisk(row) {
   return 'LOW';
 }
 
+/**
+ * Retrieves suspicious IPs from repository and enriches each record with calculated risk levels.
+ * @returns {Promise<Object>} Object containing suspicious_ips count and enriched data array
+ */
 export async function getSuspiciousIPs() {
   const rows = await logRepo.getSuspiciousIPRaw();
   const enriched = rows.map((row) => ({

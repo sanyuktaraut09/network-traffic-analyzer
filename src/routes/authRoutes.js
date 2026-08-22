@@ -1,3 +1,12 @@
+/**
+ * Folder: src/routes/
+ * Description: Authentication router stub prepared for Phase 4 JWT integration.
+ *
+ * File: src/routes/authRoutes.js
+ * Implementation details:
+ * - Placeholders for auth routes (/login, /register) to be built in Phase 4.
+ */
+
 import express from 'express';
 
 const router = express.Router();
