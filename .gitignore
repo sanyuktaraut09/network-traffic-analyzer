@@ -1,6 +1,17 @@
 node_modules/
+
+# Environment variables / secrets
 .env
+.env.*
+!.env.example
+
+# Database files
 *.db
 *.sqlite
 *.sqlite3
+
+# OS files
 .DS_Store
+
+# Test coverage
+coverage/

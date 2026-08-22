@@ -139,7 +139,8 @@ export async function getTrafficByHour(req, res, next) {
  */
 export async function getLogs(req, res, next) {
   try {
-    const result = await trafficService.getFilteredLogs(req.query);
+    const queryParams = req.validatedQuery || req.query;
+    const result = await trafficService.getFilteredLogs(queryParams);
     res.json(result);
   } catch (err) {
     next(err);

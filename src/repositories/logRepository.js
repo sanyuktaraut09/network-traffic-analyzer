@@ -4,20 +4,21 @@
  *
  * File: src/repositories/logRepository.js
  * Implementation details:
+ * - Refactored for PostgreSQL syntax using pg connection Pool ($1, $2 placeholders).
  * - Contains ALL raw SQL queries for the application. No SQL strings exist outside this file.
  * - Free of HTTP concerns (req, res) and business logic calculations.
- * - Uses parameterized SQL queries to prevent SQL injection vulnerabilities.
- * - Returns raw data rows or aggregate records wrapped in Promises.
+ * - Uses EXTRACT(HOUR FROM timestamp) for PostgreSQL time-based analytics.
+ * - Returns raw rows or aggregate records wrapped in Promises.
  */
 
-import { queryAll, queryGet } from '../config/db.js';
+import pool from '../config/db.js';
 
 /**
  * Fetches all network traffic logs sorted chronologically from oldest to newest.
  * @returns {Promise<Array>} List of log records
  */
 export async function getAllLogs() {
-  const sql = `
+  const { rows } = await pool.query(`
     SELECT
       source_ip,
       endpoint,
@@ -26,8 +27,8 @@ export async function getAllLogs() {
       timestamp
     FROM network_logs
     ORDER BY timestamp ASC
-  `;
-  return queryAll(sql);
+  `);
+  return rows;
 }
 
 /**
@@ -36,17 +37,18 @@ export async function getAllLogs() {
  * @returns {Promise<Array>} List of IP addresses with request counts
  */
 export async function getTopIPs(limit = 5) {
-  const sql = `
-    SELECT
+  const { rows } = await pool.query(
+    `SELECT
       source_ip,
-      COUNT(*) AS request_count,
-      COUNT(*) AS hit_count
+      COUNT(*)::integer AS request_count,
+      COUNT(*)::integer AS hit_count
     FROM network_logs
     GROUP BY source_ip
     ORDER BY request_count DESC
-    LIMIT ?
-  `;
-  return queryAll(sql, [limit]);
+    LIMIT $1`,
+    [limit]
+  );
+  return rows;
 }
 
 /**
@@ -55,35 +57,37 @@ export async function getTopIPs(limit = 5) {
  * @returns {Promise<Array>} List of endpoints with total hit counts
  */
 export async function getMostAccessedEndpoints(limit = 5) {
-  const sql = `
-    SELECT
+  const { rows } = await pool.query(
+    `SELECT
       endpoint,
-      COUNT(*) AS total_hits
+      COUNT(*)::integer AS total_hits
     FROM network_logs
     GROUP BY endpoint
     ORDER BY total_hits DESC
-    LIMIT ?
-  `;
-  return queryAll(sql, [limit]);
+    LIMIT $1`,
+    [limit]
+  );
+  return rows;
 }
 
 /**
- * Identifies source IPs exceeding a threshold of 401 Unauthorized attempts.
+ * Identifies source IPs exceeding a threshold of 401 Unauthorized attempts on /login endpoint.
  * @param {number} threshold - Minimum failed login attempts to filter by (default: 2)
  * @returns {Promise<Array>} List of source IPs with failed login counts
  */
 export async function getFailedLogins(threshold = 2) {
-  const sql = `
-    SELECT
+  const { rows } = await pool.query(
+    `SELECT
       source_ip,
-      COUNT(*) AS failed_attempts
+      COUNT(*)::integer AS failed_attempts
     FROM network_logs
-    WHERE status_code = 401
+    WHERE status_code = 401 AND endpoint = '/login'
     GROUP BY source_ip
-    HAVING COUNT(*) > ?
-    ORDER BY failed_attempts DESC
-  `;
-  return queryAll(sql, [threshold]);
+    HAVING COUNT(*) > $1
+    ORDER BY failed_attempts DESC`,
+    [threshold]
+  );
+  return rows;
 }
 
 /**
@@ -91,16 +95,16 @@ export async function getFailedLogins(threshold = 2) {
  * @returns {Promise<Array>} Endpoints sorted by error frequency
  */
 export async function getServerErrors() {
-  const sql = `
+  const { rows } = await pool.query(`
     SELECT
       endpoint,
-      COUNT(*) AS errors
+      COUNT(*)::integer AS errors
     FROM network_logs
     WHERE status_code = 500
     GROUP BY endpoint
     ORDER BY errors DESC
-  `;
-  return queryAll(sql);
+  `);
+  return rows;
 }
 
 /**
@@ -108,15 +112,15 @@ export async function getServerErrors() {
  * @returns {Promise<Array>} HTTP method usage summary
  */
 export async function getMethodsUsage() {
-  const sql = `
+  const { rows } = await pool.query(`
     SELECT
       method,
-      COUNT(*) AS usage_count
+      COUNT(*)::integer AS usage_count
     FROM network_logs
     GROUP BY method
     ORDER BY usage_count DESC
-  `;
-  return queryAll(sql);
+  `);
+  return rows;
 }
 
 /**
@@ -124,15 +128,15 @@ export async function getMethodsUsage() {
  * @returns {Promise<Array>} Status code distribution summary
  */
 export async function getStatusSummary() {
-  const sql = `
+  const { rows } = await pool.query(`
     SELECT
       status_code,
-      COUNT(*) AS total_requests
+      COUNT(*)::integer AS total_requests
     FROM network_logs
     GROUP BY status_code
     ORDER BY total_requests DESC
-  `;
-  return queryAll(sql);
+  `);
+  return rows;
 }
 
 /**
@@ -141,77 +145,85 @@ export async function getStatusSummary() {
  * @returns {Promise<Array>} List of top error-generating IPs
  */
 export async function getTopErrorIPs(limit = 5) {
-  const sql = `
-    SELECT
+  const { rows } = await pool.query(
+    `SELECT
       source_ip,
-      COUNT(*) AS error_count
+      COUNT(*)::integer AS error_count
     FROM network_logs
     WHERE status_code >= 400
     GROUP BY source_ip
     ORDER BY error_count DESC
-    LIMIT ?
-  `;
-  return queryAll(sql, [limit]);
+    LIMIT $1`,
+    [limit]
+  );
+  return rows;
 }
 
 /**
- * Groups request counts by hour of the day (00-23) based on log timestamps.
+ * Groups request counts by hour of the day (0-23) based on log timestamps using EXTRACT.
  * @returns {Promise<Array>} Hourly traffic distribution
  */
 export async function getTrafficByHour() {
-  const sql = `
+  const { rows } = await pool.query(`
     SELECT
-      strftime('%H', timestamp) AS hour,
-      COUNT(*) AS request_count
+      EXTRACT(HOUR FROM timestamp)::integer AS hour,
+      COUNT(*)::integer AS request_count
     FROM network_logs
     GROUP BY hour
     ORDER BY hour ASC
-  `;
-  return queryAll(sql);
+  `);
+  return rows;
 }
 
 /**
- * Queries network logs dynamically with parameterized filtering and offset-based pagination.
+ * Queries network logs dynamically with parameterized filtering ($1, $2...) and offset-based pagination.
  * @param {Object} filters - Filter criteria (ip, status, method, endpoint, page, limit)
  * @returns {Promise<Object>} Object containing matching log records and total matching count
  */
 export async function getLogs({ ip, status, method, endpoint, page = 1, limit = 20 }) {
-  let whereClause = 'WHERE 1 = 1';
+  const conditions = [];
   const params = [];
 
-  // Parameterized filters to prevent SQL injection
   if (ip) {
-    whereClause += ' AND source_ip = ?';
     params.push(ip);
+    conditions.push(`source_ip = $${params.length}`);
   }
 
   if (status) {
-    whereClause += ' AND status_code = ?';
-    params.push(status);
+    params.push(parseInt(status, 10));
+    conditions.push(`status_code = $${params.length}`);
   }
 
   if (method) {
-    whereClause += ' AND method = ?';
     params.push(method.toUpperCase());
+    conditions.push(`method = $${params.length}`);
   }
 
   if (endpoint) {
-    whereClause += ' AND endpoint = ?';
     params.push(endpoint);
+    conditions.push(`endpoint = $${params.length}`);
   }
 
-  // Query 1: Count total matching logs for pagination metadata
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const offset = (page - 1) * limit;
+
+  // Query 1: Total count for pagination metadata
   const countQuery = `
-    SELECT COUNT(*) AS total
+    SELECT COUNT(*)::integer AS total
     FROM network_logs
     ${whereClause}
   `;
+  const countResult = await pool.query(countQuery, params);
+  const total = countResult.rows[0] ? parseInt(countResult.rows[0].total, 10) : 0;
 
-  const countRow = await queryGet(countQuery, params);
-  const total = countRow ? countRow.total : 0;
+  // Query 2: Paginated log entries
+  const dataParams = [...params];
+  dataParams.push(limit);
+  const limitIndex = dataParams.length;
 
-  // Query 2: Retrieve paginated log entries
-  const offset = (page - 1) * limit;
+  dataParams.push(offset);
+  const offsetIndex = dataParams.length;
+
   const dataQuery = `
     SELECT
       source_ip,
@@ -222,31 +234,38 @@ export async function getLogs({ ip, status, method, endpoint, page = 1, limit = 
     FROM network_logs
     ${whereClause}
     ORDER BY timestamp DESC
-    LIMIT ? OFFSET ?
+    LIMIT $${limitIndex} OFFSET $${offsetIndex}
   `;
 
-  const dataParams = [...params, limit, offset];
-  const rows = await queryAll(dataQuery, dataParams);
+  const dataResult = await pool.query(dataQuery, dataParams);
 
-  return { data: rows, total: parseInt(total, 10) };
+  return { data: dataResult.rows, total };
 }
 
 /**
- * Aggregates high-level metrics across all network traffic using conditional SUM/CASE statements.
+ * Aggregates high-level metrics across all network traffic using conditional SUM/CASE statements in PostgreSQL.
  * @returns {Promise<Object>} Raw aggregate counts for dashboard calculation
  */
 export async function getDashboardRaw() {
-  const sql = `
+  const { rows } = await pool.query(`
     SELECT
-      COUNT(*) AS total_requests,
-      COUNT(DISTINCT source_ip) AS unique_ips,
-      COUNT(DISTINCT endpoint) AS unique_endpoints,
-      SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_requests,
-      SUM(CASE WHEN status_code = 401 THEN 1 ELSE 0 END) AS failed_login_attempts,
-      SUM(CASE WHEN status_code = 500 THEN 1 ELSE 0 END) AS server_errors
+      COUNT(*)::integer                                              AS total_requests,
+      COUNT(DISTINCT source_ip)::integer                             AS unique_ips,
+      COUNT(DISTINCT endpoint)::integer                              AS unique_endpoints,
+      SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END)::integer  AS error_requests,
+      SUM(CASE WHEN status_code = 401
+               AND endpoint = '/login' THEN 1 ELSE 0 END)::integer  AS failed_login_attempts,
+      SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END)::integer  AS server_errors
     FROM network_logs
-  `;
-  return queryGet(sql);
+  `);
+  return rows[0] || {
+    total_requests: 0,
+    unique_ips: 0,
+    unique_endpoints: 0,
+    error_requests: 0,
+    failed_login_attempts: 0,
+    server_errors: 0
+  };
 }
 
 /**
@@ -254,39 +273,71 @@ export async function getDashboardRaw() {
  * @returns {Promise<Array>} Suspicious IP traffic metrics
  */
 export async function getSuspiciousIPRaw() {
-  const sql = `
+  const { rows } = await pool.query(`
     SELECT
       source_ip,
-      COUNT(*) AS total_requests,
-      SUM(CASE WHEN status_code = 401 THEN 1 ELSE 0 END) AS failed_logins,
-      SUM(CASE WHEN status_code >= 400 AND status_code < 500 THEN 1 ELSE 0 END) AS client_errors,
-      SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END) AS server_errors
+      COUNT(*)::integer                                              AS total_requests,
+      SUM(CASE WHEN status_code = 401
+               AND endpoint = '/login' THEN 1 ELSE 0 END)::integer  AS failed_logins,
+      SUM(CASE WHEN status_code BETWEEN 400 AND 499
+               THEN 1 ELSE 0 END)::integer                          AS client_errors,
+      SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END)::integer  AS server_errors
     FROM network_logs
     GROUP BY source_ip
     HAVING
-      failed_logins > 2
-      OR client_errors > 5
-      OR server_errors > 2
-      OR total_requests > 10
-    ORDER BY total_requests DESC
-  `;
-  return queryAll(sql);
+      SUM(CASE WHEN status_code = 401
+               AND endpoint = '/login' THEN 1 ELSE 0 END) >= 2
+      OR SUM(CASE WHEN status_code BETWEEN 400 AND 499
+                  THEN 1 ELSE 0 END) >= 3
+      OR SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END) >= 2
+      OR COUNT(*) >= 10
+    ORDER BY failed_logins DESC, client_errors DESC
+  `);
+  return rows;
 }
 
 /**
- * Runs EXPLAIN QUERY PLAN to inspect database index usage and query execution details.
- * @returns {Promise<Array>} Query plan execution steps
+ * Runs EXPLAIN ANALYZE to inspect PostgreSQL query execution and index scan details.
+ * @returns {Promise<Array>} PostgreSQL query plan execution steps
  */
 export async function getQueryPlan() {
-  const sql = `
-    EXPLAIN QUERY PLAN
-    SELECT
-      source_ip,
-      COUNT(*) AS hit_count
+  const { rows } = await pool.query(`
+    EXPLAIN ANALYZE
+    SELECT source_ip, COUNT(*) AS request_count
     FROM network_logs
     GROUP BY source_ip
-    ORDER BY hit_count DESC
+    ORDER BY request_count DESC
     LIMIT 5
-  `;
-  return queryAll(sql);
+  `);
+  return rows;
+}
+
+/**
+ * Inserts multiple log records in a single optimized batch parameterized SQL query.
+ * @param {Array<Object>} logs - Array of network log objects to insert
+ * @returns {Promise<void>}
+ */
+export async function bulkInsertLogs(logs = []) {
+  if (!logs || !logs.length) return;
+
+  const values = logs
+    .map((_, i) => {
+      const base = i * 5;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+    })
+    .join(', ');
+
+  const params = logs.flatMap((log) => [
+    log.source_ip,
+    log.endpoint,
+    log.method,
+    log.status_code,
+    log.timestamp || new Date().toISOString()
+  ]);
+
+  await pool.query(
+    `INSERT INTO network_logs (source_ip, endpoint, method, status_code, timestamp)
+     VALUES ${values}`,
+    params
+  );
 }

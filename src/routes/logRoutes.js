@@ -5,11 +5,14 @@
  * File: src/routes/logRoutes.js
  * Implementation details:
  * - Express Router mapping endpoint paths to logController methods.
+ * - Applies validateQuery(LogFilterSchema) middleware on dynamic query filtering routes.
  * - Contains ZERO SQL queries and ZERO business logic.
  */
 
 import express from 'express';
 import * as logController from '../controllers/logController.js';
+import { validateQuery } from '../middleware/validate.js';
+import { LogFilterSchema } from '../schemas/logSchemas.js';
 
 const router = express.Router();
 
@@ -26,10 +29,10 @@ router.get('/traffic-by-hour', logController.getTrafficByHour);
 router.get('/dashboard', logController.getDashboard);
 router.get('/query-plan', logController.getQueryPlan);
 
-// Paginated & filtered logs endpoint
-router.get('/logs', logController.getLogs);
+// Paginated & filtered logs endpoint with Zod query parameter validation
+router.get('/logs', validateQuery(LogFilterSchema), logController.getLogs);
 
 // Base route handler when mounted at /api/logs
-router.get('/', logController.getLogs);
+router.get('/', validateQuery(LogFilterSchema), logController.getLogs);
 
 export default router;

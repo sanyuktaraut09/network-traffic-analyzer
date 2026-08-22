@@ -7,10 +7,43 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "migrate:up": "node-pg-migrate up",
+    "migrate:down": "node-pg-migrate down",
+    "seed": "node scripts/seed.js",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --forceExit --detectOpenHandles",
+    "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage --forceExit --detectOpenHandles",
+    "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch"
+  },
+  "node-pg-migrate": {
+    "migrations-dir": "migrations",
+    "database-url-var": "DATABASE_URL"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/config/**"
+    ]
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "bullmq": "^6.2.0",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "sqlite3": "^6.0.1"
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
+    "@jest/globals": "^30.4.1",
+    "babel-jest": "^30.4.1",
+    "cross-env": "^10.1.0",
+    "jest": "^30.4.2",
+    "node-pg-migrate": "^9.0.0",
+    "supertest": "^7.2.2"
   }
 }
