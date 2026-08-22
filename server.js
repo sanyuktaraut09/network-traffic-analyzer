@@ -1,21 +1,7 @@
-const express = require("express");
-const db = require("./database/db");
+import app from './src/app.js';
 
-const logRoutes = require("./routes/logRoutes");
-
-const app = express();
-
-const PORT = 3000;
-
-app.use(express.json());
-
-// Routes
-app.use("/", logRoutes);
-
-app.get("/", (req, res) => {
-    res.send("Network Traffic Analyzer API is Running 🚀");
-});
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });
