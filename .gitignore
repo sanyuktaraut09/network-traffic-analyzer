@@ -15,3 +15,10 @@ node_modules/
 
 # Test coverage
 coverage/
+
+# Internal project planning documents
+phase-1-architecture.md
+phase-2-postgresql.md
+phase-3-tests.md
+phase-4-features.md
+phase-5-devops.md
